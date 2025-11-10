@@ -740,72 +740,51 @@ class PBDSolver(Solver):
 
     @ti.kernel
     def _kernel_shape_matching(self, f: ti.i32):
-        # For each batch/instance i_b compute centroid, covariance, SVD -> R, then goal positions g_i
+        # Implementation of shape matching from https://graphics.stanford.edu/courses/cs468-05-fall/Papers/p471-muller.pdf
+        # Assumes stiffness = 1.0 (rigid bodies)
+
         for i_b in ti.ndrange(self._B):
-            # 1) compute total mass and centroids t (current) and t0 (rest)
+            # 1) compute total mass and t, t0
             tot_w = 0.0
             t = ti.Vector([0.0, 0.0, 0.0])
             t0 = ti.Vector([0.0, 0.0, 0.0])
 
             for i_p in range(self._n_particles):
-                if self.particles[i_p, i_b].free:   # include only free particles? adapt if you want all
+                if self.particles[i_p, i_b].free:
                     w = self.particles_info[i_p].mass
-                    p = self.particles[i_p, i_b].pos
-                    p0 = self.particles_info[i_p].pos_rest
+                    x = self.particles[i_p, i_b].pos
+                    x0 = self.particles[i_p, i_b].ipos
                     tot_w += w
-                    t += w * p
-                    t0 += w * p0
-
+                    t += w * x
+                    t0 += w * x0
 
             t *= (1.0 / tot_w)
             t0 *= (1.0 / tot_w)
 
-            # 2) compute covariance matrix A = sum_i w_i * (p_i - t) * (p0_i - t0)^T
-            A = ti.Matrix.zero(ti.f32, 3, 3)
+            A_pq = ti.Matrix.zero(ti.f32, 3, 3)
             for i_p in range(self._n_particles):
                 if self.particles[i_p, i_b].free:
                     w = self.particles_info[i_p].mass
-                    p = self.particles[i_p, i_b].pos
-                    p0 = self.particles_info[i_p].pos_rest
-                    xp = p - t
-                    x0p = p0 - t0
-                    # outer product xp * x0p^T
-                    A += w * xp.outer_product(x0p)
+                    x = self.particles[i_p, i_b].pos
+                    x0 = self.particles[i_p, i_b].ipos
+                    pi = x - t
+                    qi = x0 - t0
+                    A_pq += w * pi.outer_product(qi)
 
-            # 3) polar decomposition via SVD: A = U * S * V^T  => R = U * V^T (and fix reflection)
-            # use ti.svd if available
-            U = ti.Matrix.zero(gs.ti_float, 3, 3)
-            S = ti.Matrix.zero(gs.ti_float, 3, 3)
-            V = ti.Matrix.zero(gs.ti_float, 3, 3)
+            # 3) compute rotation R using polar decomposition
+            R, S = ti.polar_decompose(A_pq)
 
-            # taichi svd: returns U, S, V (V is already transposed depending on version)
-            # I assume ti.svd(A) -> (U, S, V); if your version differs, adapt accordingly.
-            U, S, V = ti.svd(A)
-
-            # compute R = U * V^T, but correct for reflection
-            R = U @ V.transpose()
-            # reflection check: determinant should be +1
-            if R.determinant() < 0.0:
-                # negate the last column of U (or V) to correct reflection
-                # safer: flip sign of last column of U
-                U[0, 2] = -U[0, 2]
-                U[1, 2] = -U[1, 2]
-                U[2, 2] = -U[2, 2]
-                R = U @ V.transpose()
-
-            # 4) compute goal positions g_i and pull particles toward them
-            stiffness = 1  # e.g. 1.0 for rigid, <1 for soft
             # 4) compute goal positions g_i and accumulate corrections into dpos
             for i_p in range(self._n_particles):
                 if self.particles[i_p, i_b].free:
-                    p0 = self.particles_info[i_p].pos_rest
-                    g = R @ (p0 - t0) + t    # goal position (world space)
-                    # accumulate positional correction into dpos (follow the pattern used by other solvers)
-                    self.particles[i_p, i_b].dpos += stiffness * (g - self.particles[i_p, i_b].pos)
+                    x0 = self.particles[i_p, i_b].ipos
+                    xi = self.particles[i_p, i_b].pos
+                    g = R @ (x0 - t0) + t
+                    self.particles[i_p, i_b].dpos += g - xi
 
-            # apply accumulated corrections and clear dpos (only to free, physical particles)
+            # 5) apply accumulated corrections and clear dpos (only to free, physical particles)
             for i_p in range(self._n_particles):
-                # if self.particles[i_p, i_b].free and self.particles_info[i_p].material_type != self.MATERIAL.PARTICLE:
+                if self.particles[i_p, i_b].free:
                     self.particles[i_p, i_b].pos = self.particles[i_p, i_b].pos + self.particles[i_p, i_b].dpos
                     self.particles[i_p, i_b].dpos.fill(0)
 
