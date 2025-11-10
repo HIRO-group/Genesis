@@ -22,6 +22,14 @@ def main():
             substeps=10,
             gravity=(0, 0, -9.8),
         ),
+        pbd_options=gs.options.PBDOptions(
+            max_stretch_solver_iterations=0,
+            max_bending_solver_iterations=0,
+            max_volume_solver_iterations=0,
+            max_density_solver_iterations=0,
+            max_viscosity_solver_iterations=0,
+            # particle_size=2*1e-2,
+        ),
         viewer_options=gs.options.ViewerOptions(
             camera_pos=(2, 2, 1.5),
             camera_lookat=(0, 0, 0.5),
@@ -41,16 +49,20 @@ def main():
         material=mat_elastic,
         morph=gs.morphs.Box(
             size=(0.04, 0.04, 0.04),
-            pos=(0.65, 0.0, 0.02),
+            pos=(0.65, 0.0, 0.2),
+            # euler=(0, 45, 0),
         )
     )
 
     scene.build()
 
-    horizon = 1000 if "PYTEST_VERSION" not in os.environ else 5
+    horizon = 100 if "PYTEST_VERSION" not in os.environ else 5
     # forward pass
     for i in range(horizon):
+        # breakpoint()
         scene.step()
+        # print(scene.entities[1]._particles)
+        
 
 
 if __name__ == "__main__":

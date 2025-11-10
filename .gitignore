@@ -152,3 +152,4 @@ dmypy.json
 
 hiro/assets 
 *.lock
+.github/copilot-instructions.md
