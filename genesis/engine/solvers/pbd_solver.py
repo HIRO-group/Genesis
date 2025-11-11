@@ -730,47 +730,44 @@ class PBDSolver(Solver):
             for i_b in ti.ndrange(self._B):
                 # 1) compute total mass and t, t0
                 tot_w = 0.0
-                t = ti.Vector([0.0, 0.0, 0.0])
-                t0 = ti.Vector([0.0, 0.0, 0.0])
+                t = ti.Vector([0.0, 0.0, 0.0],  dt=gs.ti_float)
+                t0 = ti.Vector([0.0, 0.0, 0.0],  dt=gs.ti_float)
 
                 for i_p in range(self._n_particles):
-                    if self.particles[i_p, i_b].free:
-                        w = self.particles_info[i_p].mass
-                        x = self.particles[i_p, i_b].pos
-                        x0 = self.particles[i_p, i_b].ipos
-                        tot_w += w
-                        t += w * x
-                        t0 += w * x0
+                    w = self.particles_info[i_p].mass
+                    x = self.particles[i_p, i_b].pos
+                    x0 = self.particles_info[i_p].pos_rest
+
+                    tot_w += w
+                    t += w * x
+                    t0 += w * x0
 
                 t *= (1.0 / tot_w)
                 t0 *= (1.0 / tot_w)
 
-                A_pq = ti.Matrix.zero(ti.f32, 3, 3)
+                A_pq = ti.Matrix.zero(gs.ti_float, 3, 3)
                 for i_p in range(self._n_particles):
-                    if self.particles[i_p, i_b].free:
-                        w = self.particles_info[i_p].mass
-                        x = self.particles[i_p, i_b].pos
-                        x0 = self.particles[i_p, i_b].ipos
-                        pi = x - t
-                        qi = x0 - t0
-                        A_pq += w * pi.outer_product(qi)
+                    w = self.particles_info[i_p].mass
+                    x = self.particles[i_p, i_b].pos
+                    x0 = self.particles_info[i_p].pos_rest
+                    pi = x - t
+                    qi = x0 - t0
+                    A_pq += w * pi.outer_product(qi)
 
                 # 3) compute rotation R using polar decomposition
                 R, S = ti.polar_decompose(A_pq)
 
                 # 4) compute goal positions g_i and accumulate corrections into dpos
                 for i_p in range(self._n_particles):
-                    if self.particles[i_p, i_b].free:
-                        x0 = self.particles[i_p, i_b].ipos
-                        xi = self.particles[i_p, i_b].pos
-                        g = R @ (x0 - t0) + t
-                        self.particles[i_p, i_b].dpos += g - xi
+                    x0 = self.particles_info[i_p].pos_rest
+                    xi = self.particles[i_p, i_b].pos
+                    g = R @ (x0 - t0) + t
+                    self.particles[i_p, i_b].dpos += (g - xi)
 
-                # 5) apply accumulated corrections and clear dpos (only to free, physical particles)
+                # 5) apply accumulated corrections and clear dpos
                 for i_p in range(self._n_particles):
-                    if self.particles[i_p, i_b].free:
-                        self.particles[i_p, i_b].pos = self.particles[i_p, i_b].pos + self.particles[i_p, i_b].dpos
-                        self.particles[i_p, i_b].dpos.fill(0)
+                    self.particles[i_p, i_b].pos = self.particles[i_p, i_b].pos + self.particles[i_p, i_b].dpos
+                    self.particles[i_p, i_b].dpos.fill(0)
 
     @ti.kernel
     def _kernel_compute_velocity(self, f: ti.i32):
