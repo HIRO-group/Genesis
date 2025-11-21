@@ -31,14 +31,17 @@ def select_urdf_entities(scene_description:dict, task_goal:str, entity_name:str,
     # Does it matter if we have some collisions? Or do we need to be as accurate as possible?
     # What task_goal options should we support? etc.
     prompt = f"""
-    You are an expert in robotics and simulation.
+    You are an expert in robotics and simulation tasked with configuring a simulation 
+    environment for efficient and effective robot planning. A URDF file describes
+    the physical and visual properties of objects in a simulation and are used for rendering and
+    for collision checking when planning and simlating.
     Given the task goal: "{task_goal}" and scene description:
     {scene_str}
     Select the most suitable URDF representation for the entity:
     {entity_name} 
     from the available candidates below:
     {candidates_str}
-    The goal is to complete the pick-and-place task accurately and quickly.
+    The goal is to complete the task accurately and quickly.
     Select URDF representations that provide enough fidelity for successful planning and execution,
     while minimizing computational cost and simulation time. Use simpler models where they are sufficient, 
     and higher-fidelity models only where necessary.
